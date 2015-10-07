@@ -29,9 +29,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codegangsta/negroni"
-	"github.com/gorilla/mux"
-	"github.com/nabeken/negroni-auth"
+	"github.com/appc/acserver/Godeps/_workspace/src/github.com/codegangsta/negroni"
+	"github.com/appc/acserver/Godeps/_workspace/src/github.com/gorilla/mux"
+	"github.com/appc/acserver/Godeps/_workspace/src/github.com/nabeken/negroni-auth"
 )
 
 type aci struct {
