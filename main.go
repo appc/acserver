@@ -21,6 +21,7 @@ import (
 	"html/template"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -29,9 +30,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/appc/acserver/Godeps/_workspace/src/github.com/codegangsta/negroni"
+	"github.com/appc/acserver/Godeps/_workspace/src/github.com/gorilla/handlers"
 	"github.com/appc/acserver/Godeps/_workspace/src/github.com/gorilla/mux"
-	"github.com/appc/acserver/Godeps/_workspace/src/github.com/nabeken/negroni-auth"
 )
 
 type aci struct {
@@ -68,14 +68,6 @@ type upload struct {
 	GotSig  bool
 	GotACI  bool
 	GotMan  bool
-}
-
-type handler struct {
-	Fn func(http.ResponseWriter, *http.Request)
-}
-
-func (h handler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	h.Fn(rw, req)
 }
 
 var (
@@ -144,36 +136,42 @@ func main() {
 
 	uploads = make(map[int]*upload)
 
-	authHandler := auth.Basic(username, password)
+	authHandler := func(h http.HandlerFunc) http.Handler {
+		return authBasic(username, password, h)
+	}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/", renderListOfACIs)
 	r.HandleFunc("/pubkeys.gpg", getPubkeys)
+	r.Handle("/{image}/startupload", authHandler(initiateUpload))
+	r.Handle("/manifest/{num}", authHandler(uploadManifest))
+	r.Handle("/signature/{num}", authHandler(receiveUpload(tmpSigPath, gotSig)))
+	r.Handle("/aci/{num}", authHandler(receiveUpload(tmpACIPath, gotACI)))
+	r.Handle("/complete/{num}", authHandler(completeUpload))
 
-	n0 := negroni.New(authHandler)
-	n0.UseHandler(handler{initiateUpload})
-	r.Handle("/{image}/startupload", n0)
+	r.NotFoundHandler = http.FileServer(http.Dir(directory))
 
-	n1 := negroni.New(authHandler)
-	n1.UseHandler(handler{uploadManifest})
-	r.Handle("/manifest/{num}", n1)
+	h := handlers.LoggingHandler(os.Stderr, r)
 
-	n2 := negroni.New(authHandler)
-	n2.UseHandler(handler{receiveUpload(tmpSigPath, gotSig)})
-	r.Handle("/signature/{num}", n2)
+	addr := ":" + strconv.Itoa(*port)
+	log.Println("Listening on", addr)
+	log.Fatal(http.ListenAndServe(addr, h))
+}
 
-	n3 := negroni.New(authHandler)
-	n3.UseHandler(handler{receiveUpload(tmpACIPath, gotACI)})
-	r.Handle("/aci/{num}", n3)
+func authBasic(user, pass string, h http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reqUser, reqPass, ok := r.BasicAuth()
+		if !ok {
+			http.Error(w, "No authorization provided", http.StatusUnauthorized)
+			return
+		}
 
-	n4 := negroni.New(authHandler)
-	n4.UseHandler(handler{completeUpload})
-	r.Handle("/complete/{num}", n4)
-
-	n := negroni.New(negroni.NewStatic(http.Dir(directory)),
-		negroni.NewRecovery(), negroni.NewLogger())
-	n.UseHandler(r)
-	n.Run(":" + strconv.Itoa(*port))
+		if reqUser != user || reqPass != pass {
+			http.Error(w, "Incorrect username/password basic auth provided ", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}
 }
 
 // The root page. Builds a human-readable list of what ACIs are available,
