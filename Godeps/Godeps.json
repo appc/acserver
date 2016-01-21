@@ -6,33 +6,16 @@
 	],
 	"Deps": [
 		{
-			"ImportPath": "github.com/codegangsta/negroni",
-			"Comment": "v0.1-70-gc7477ad",
-			"Rev": "c7477ad8e330bef55bf1ebe300cf8aa67c492d1b"
-		},
-		{
 			"ImportPath": "github.com/gorilla/context",
 			"Rev": "50c25fb3b2b3b3cc724e9b6ac75fb44b3bccd0da"
 		},
 		{
+			"ImportPath": "github.com/gorilla/handlers",
+			"Rev": "60c7bfde3e33c201519a200a4507a158cc03a17b"
+		},
+		{
 			"ImportPath": "github.com/gorilla/mux",
 			"Rev": "e444e69cbd2e2e3e0749a2f3c717cec491552bbf"
-		},
-		{
-			"ImportPath": "github.com/nabeken/negroni-auth",
-			"Rev": "e36ebd5bfb3f8abdb29af3b5080565d740f2bf7d"
-		},
-		{
-			"ImportPath": "github.com/pmylund/go-cache",
-			"Rev": "93d85800f2fa6bd0a739e7bd612bfa3bc008b72d"
-		},
-		{
-			"ImportPath": "golang.org/x/crypto/bcrypt",
-			"Rev": "a7ead6ddf06233883deca151dffaef2effbf498f"
-		},
-		{
-			"ImportPath": "golang.org/x/crypto/blowfish",
-			"Rev": "a7ead6ddf06233883deca151dffaef2effbf498f"
 		}
 	]
 }
