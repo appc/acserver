@@ -71,7 +71,7 @@ type upload struct {
 }
 
 var (
-	serverName  string
+	//serverName  string
 	directory   string
 	templatedir string
 	username    string
@@ -86,12 +86,13 @@ var (
 	https = flag.Bool("https", false,
 		"Whether or not to provide https URLs for meta discovery")
 	port = flag.Int("port", 3000, "The port to run the server on")
+	serverName = flag.String("domain", "", "domain provided by discovery")
 )
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 	fmt.Fprintf(os.Stderr,
-		"acserver SERVER_NAME ACI_DIRECTORY TEMPLATE_DIRECTORY USERNAME PASSWORD\n")
+		"acserver ACI_DIRECTORY TEMPLATE_DIRECTORY USERNAME PASSWORD\n")
 	fmt.Fprintf(os.Stderr, "Flags:\n")
 	flag.PrintDefaults()
 }
@@ -101,7 +102,7 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	if len(args) != 5 {
+	if len(args) != 4 {
 		usage()
 		return
 	}
@@ -121,11 +122,11 @@ func main() {
 		return
 	}
 
-	serverName = args[0]
-	directory = args[1]
-	templatedir = args[2]
-	username = args[3]
-	password = args[4]
+	//serverName = args[0]
+	directory = args[0]
+	templatedir = args[1]
+	username = args[2]
+	password = args[3]
 
 	os.RemoveAll(path.Join(directory, "tmp"))
 	err := os.MkdirAll(path.Join(directory, "tmp"), 0755)
@@ -194,12 +195,13 @@ func renderListOfACIs(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
 		return
 	}
+
 	err = t.Execute(w, struct {
 		ServerName string
 		ACIs       []aci
 		HTTPS      bool
 	}{
-		ServerName: serverName,
+		ServerName: hostname(req),
 		ACIs:       acis,
 		HTTPS:      *https,
 	})
@@ -235,6 +237,13 @@ func getPubkeys(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func hostname(req *http.Request) string {
+	if *serverName != "" {
+		return *serverName
+	}
+	return req.Host
+}
+
 func initiateUpload(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.WriteHeader(http.StatusNotFound)
@@ -251,9 +260,9 @@ func initiateUpload(w http.ResponseWriter, req *http.Request) {
 
 	var prefix string
 	if *https {
-		prefix = "https://" + serverName
+		prefix = "https://" + hostname(req)
 	} else {
-		prefix = "http://" + serverName
+		prefix = "http://" + hostname(req)
 	}
 
 	deets := initiateDetails{
