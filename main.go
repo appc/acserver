@@ -71,7 +71,6 @@ type upload struct {
 }
 
 var (
-	//serverName  string
 	directory   string
 	username    string
 	password    string
@@ -80,10 +79,8 @@ var (
 	newuploadLock sync.Mutex
 	uploads       map[int]*upload
 
-	gpgpubkey = flag.String("pubkeys", "",
-		"Path to gpg public keys images will be signed with")
-	https = flag.Bool("https", false,
-		"Whether or not to provide https URLs for meta discovery")
+	gpgpubkey = flag.String("pubkeys", "", "Path to gpg public keys images will be signed with")
+	https = flag.Bool("https", false, "Whether or not to provide https URLs for meta discovery")
 	port = flag.Int("port", 3000, "The port to run the server on")
 	serverName = flag.String("domain", "", "domain provided by discovery")
 )
