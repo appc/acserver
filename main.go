@@ -71,9 +71,7 @@ type upload struct {
 }
 
 var (
-	serverName  string
 	directory   string
-	templatedir string
 	username    string
 	password    string
 
@@ -81,17 +79,16 @@ var (
 	newuploadLock sync.Mutex
 	uploads       map[int]*upload
 
-	gpgpubkey = flag.String("pubkeys", "",
-		"Path to gpg public keys images will be signed with")
-	https = flag.Bool("https", false,
-		"Whether or not to provide https URLs for meta discovery")
+	gpgpubkey = flag.String("pubkeys", "", "Path to gpg public keys images will be signed with")
+	https = flag.Bool("https", false, "Whether or not to provide https URLs for meta discovery")
 	port = flag.Int("port", 3000, "The port to run the server on")
+	serverName = flag.String("domain", "", "domain provided by discovery")
 )
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 	fmt.Fprintf(os.Stderr,
-		"acserver SERVER_NAME ACI_DIRECTORY TEMPLATE_DIRECTORY USERNAME PASSWORD\n")
+		"acserver ACI_DIRECTORY USERNAME PASSWORD\n")
 	fmt.Fprintf(os.Stderr, "Flags:\n")
 	flag.PrintDefaults()
 }
@@ -101,7 +98,7 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	if len(args) != 5 {
+	if len(args) != 3 {
 		usage()
 		return
 	}
@@ -121,11 +118,10 @@ func main() {
 		return
 	}
 
-	serverName = args[0]
-	directory = args[1]
-	templatedir = args[2]
-	username = args[3]
-	password = args[4]
+	//serverName = args[0]
+	directory = args[0]
+	username = args[1]
+	password = args[2]
 
 	os.RemoveAll(path.Join(directory, "tmp"))
 	err := os.MkdirAll(path.Join(directory, "tmp"), 0755)
@@ -182,7 +178,12 @@ func renderListOfACIs(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	t, err := template.ParseFiles(path.Join(templatedir, "index.html"))
+	content, err := Asset("templates/index.html")
+	if err != nil {
+		fmt.Fprintf(w, fmt.Sprintf("%v", err))
+	}
+	t, err := template.New("index").Parse(string(content))
+	//t, err := template.ParseFiles(path.Join(templatedir, "index.html"))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
@@ -194,12 +195,13 @@ func renderListOfACIs(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
 		return
 	}
+
 	err = t.Execute(w, struct {
 		ServerName string
 		ACIs       []aci
 		HTTPS      bool
 	}{
-		ServerName: serverName,
+		ServerName: hostname(req),
 		ACIs:       acis,
 		HTTPS:      *https,
 	})
@@ -235,6 +237,13 @@ func getPubkeys(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func hostname(req *http.Request) string {
+	if *serverName != "" {
+		return *serverName
+	}
+	return req.Host
+}
+
 func initiateUpload(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.WriteHeader(http.StatusNotFound)
@@ -251,9 +260,9 @@ func initiateUpload(w http.ResponseWriter, req *http.Request) {
 
 	var prefix string
 	if *https {
-		prefix = "https://" + serverName
+		prefix = "https://" + hostname(req)
 	} else {
-		prefix = "http://" + serverName
+		prefix = "http://" + hostname(req)
 	}
 
 	deets := initiateDetails{
@@ -597,8 +606,15 @@ func listACIs() ([]aci, error) {
 	for _, file := range files {
 		_, fname := path.Split(file.Name())
 		tokens := strings.Split(fname, "-")
-		if len(tokens) != 4 {
+		if len(tokens) < 4 {
 			continue
+		}
+		if len(tokens) > 4 {
+			diff := len(tokens) - 4
+			tokens[0] = strings.Join(tokens[0:len(tokens) - 3], "-")
+			tokens[1] = tokens[1 + diff]
+			tokens[2] = tokens[2 + diff]
+			tokens[3] = tokens[3 + diff]
 		}
 
 		tokens1 := strings.Split(tokens[3], ".")
