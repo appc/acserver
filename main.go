@@ -597,8 +597,15 @@ func listACIs() ([]aci, error) {
 	for _, file := range files {
 		_, fname := path.Split(file.Name())
 		tokens := strings.Split(fname, "-")
-		if len(tokens) != 4 {
+		if len(tokens) < 4 {
 			continue
+		}
+		if len(tokens) > 4 {
+			diff := len(tokens) - 4
+			tokens[0] = strings.Join(tokens[0:len(tokens) - 3], "-")
+			tokens[1] = tokens[1 + diff]
+			tokens[2] = tokens[2 + diff]
+			tokens[3] = tokens[3 + diff]
 		}
 
 		tokens1 := strings.Split(tokens[3], ".")
