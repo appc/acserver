@@ -30,8 +30,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/appc/acserver/Godeps/_workspace/src/github.com/gorilla/handlers"
-	"github.com/appc/acserver/Godeps/_workspace/src/github.com/gorilla/mux"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 )
 
 type aci struct {
