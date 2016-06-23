@@ -8,16 +8,17 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ORG_PATH="github.com/appc"
 REPO_PATH="${ORG_PATH}/acserver"
 
-if [ ! -h gopath/src/${REPO_PATH} ]; then
-	mkdir -p gopath/src/${ORG_PATH}
-	ln -s ../../../.. gopath/src/${REPO_PATH} || exit 255
+if [ ! -h ${DIR}/gopath/src/${REPO_PATH} ]; then
+  mkdir -p ${DIR}/gopath/src/${ORG_PATH}
+  cd ${DIR} && ln -s ../../../.. gopath/src/${REPO_PATH} || exit 255
 fi
 
+export GO15VENDOREXPERIMENT=1
 export GOBIN=${DIR}/bin
-export GOPATH=${DIR}/Godeps/_workspace:${DIR}/gopath
+export GOPATH=${DIR}/gopath
+export GOOS GOARCH
 
 eval $(go env)
-export GOOS GOARCH
 
 if [ "${GOOS}" = "freebsd" ]; then
     # /usr/bin/cc is clang on freebsd, but we need to tell it to go to
@@ -27,4 +28,4 @@ if [ "${GOOS}" = "freebsd" ]; then
 fi
 
 echo "Building acserver..."
-go build -o $GOBIN/acserver ${REPO_PATH}
+go build -o ${GOBIN}/acserver ${REPO_PATH}
