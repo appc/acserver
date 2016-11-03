@@ -86,6 +86,7 @@ var (
 		"Whether or not to provide https URLs for meta discovery")
 	port = flag.Int("port", 3000, "The port to run the server on")
 	serverName = flag.String("domain", "", "domain provided by discovery")
+	unsigned = flag.Bool("unsigned", false, "Ignore aci signature")
 )
 
 func usage() {
@@ -413,7 +414,7 @@ func completeUpload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if !up.GotSig {
+	if !*unsigned && !up.GotSig {
 		reportFailure(num, w, "signature wasn't uploaded", msg.Reason)
 		return
 	}
@@ -523,10 +524,12 @@ func finishUpload(num int) error {
 		return err
 	}
 
-	err = os.Rename(path.Join(directory, "tmp", strconv.Itoa(num)+".asc"),
-		path.Join(directory, up.Image+".asc"))
-	if err != nil {
-		return err
+	tmpsig := path.Join(directory, "tmp", strconv.Itoa(num)+".asc")
+	if _, err := os.Stat(tmpsig); err == nil {
+		err = os.Rename(tmpsig, path.Join(directory, up.Image+".asc"))
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
