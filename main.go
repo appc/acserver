@@ -26,9 +26,11 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"bytes"
+	"regexp"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -84,9 +86,12 @@ var (
 		"Path to gpg public keys images will be signed with")
 	https = flag.Bool("https", false,
 		"Whether or not to provide https URLs for meta discovery")
-	port = flag.Int("port", 3000, "The port to run the server on")
+	port       = flag.Int("port", 3000, "The port to run the server on")
 	serverName = flag.String("domain", "", "domain provided by discovery")
-	unsigned = flag.Bool("unsigned", false, "Ignore aci signature")
+	unsigned   = flag.Bool("unsigned", false, "Ignore aci signature")
+
+	imageFilePattern   = regexp.MustCompile(`^([a-z0-9_-]+)-([a-z0-9_\-\.]+)-([a-z0-9_]+)-([a-z0-9_]+).aci$`)
+	hostAndNamePattern = regexp.MustCompile(`^([a-z0-9_\-.]+(?:\/[a-z0-9_\-.]+)*)\/([a-z0-9_-]+)$`)
 )
 
 func usage() {
@@ -148,6 +153,7 @@ func main() {
 	r.Handle("/signature/{num}", authHandler(receiveUpload(tmpSigPath, gotSig)))
 	r.Handle("/aci/{num}", authHandler(receiveUpload(tmpACIPath, gotACI)))
 	r.Handle("/complete/{num}", authHandler(completeUpload))
+	r.HandleFunc("/find", find)
 
 	r.NotFoundHandler = http.FileServer(http.Dir(directory))
 
@@ -156,6 +162,43 @@ func main() {
 	addr := ":" + strconv.Itoa(*port)
 	log.Println("Listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, h))
+}
+
+func find(w http.ResponseWriter, req *http.Request) {
+	var url bytes.Buffer
+
+	os := req.URL.Query().Get("os")
+	arch := req.URL.Query().Get("arch")
+	ext := req.URL.Query().Get("ext")
+	version := req.URL.Query().Get("version")
+	hostAndName := hostAndNamePattern.FindStringSubmatch(req.URL.Query().Get("name"))
+	if len(hostAndName) != 3 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	url.WriteString("http")
+	if *https {
+		url.WriteRune('s')
+	}
+	url.WriteString("://")
+	url.WriteString(hostname(req))
+	url.WriteRune('/')
+	url.WriteString(hostAndName[1])
+	url.WriteRune('/')
+	url.WriteString(hostAndName[2])
+	url.WriteRune('/')
+	url.WriteString(hostAndName[2])
+	url.WriteRune('-')
+	url.WriteString(version)
+	url.WriteRune('-')
+	url.WriteString(os)
+	url.WriteRune('-')
+	url.WriteString(arch)
+	url.WriteRune('.')
+	url.WriteString(ext)
+
+	http.Redirect(w, req, url.String(), http.StatusFound)
 }
 
 func authBasic(user, pass string, h http.Handler) http.HandlerFunc {
@@ -188,7 +231,7 @@ func renderListOfACIs(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
 		return
 	}
-	acis, err := listACIs()
+	acis, err := listACIs(req)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
@@ -426,7 +469,7 @@ func completeUpload(w http.ResponseWriter, req *http.Request) {
 
 	//TODO: image verification here
 
-	err = finishUpload(num)
+	err = finishUpload(num, req)
 	if err != nil {
 		reportFailure(num, w, "Internal Server Error", msg.Reason)
 		return
@@ -507,7 +550,7 @@ func abortUpload(num int) error {
 	return nil
 }
 
-func finishUpload(num int) error {
+func finishUpload(num int, req *http.Request) error {
 	newuploadLock.Lock()
 	up, ok := uploads[num]
 	if ok {
@@ -518,8 +561,13 @@ func finishUpload(num int) error {
 		return fmt.Errorf("no such upload: %d", num)
 	}
 
-	err := os.Rename(path.Join(directory, "tmp", strconv.Itoa(num)),
-		path.Join(directory, up.Image))
+	res := imageFilePattern.FindStringSubmatch(up.Image)
+	targetPath := path.Join(directory, hostname(req), res[1])
+	if err := os.MkdirAll(targetPath, 0755); err != nil {
+		return err
+	}
+
+	err := os.Rename(path.Join(directory, "tmp", strconv.Itoa(num)), path.Join(targetPath, up.Image))
 	if err != nil {
 		return err
 	}
@@ -596,65 +644,55 @@ func gotMan(num int) error {
 	return nil
 }
 
-func listACIs() ([]aci, error) {
-	files, err := ioutil.ReadDir(directory)
+func listACIs(req *http.Request) ([]aci, error) {
+	rootPath := path.Join(directory, hostname(req))
+	dirs, err := ioutil.ReadDir(rootPath)
 	if err != nil {
 		return nil, err
 	}
 
 	var acis []aci
-	for _, file := range files {
-		_, fname := path.Split(file.Name())
-		tokens := strings.Split(fname, "-")
-		if len(tokens) < 4 {
-			continue
-		}
-		if len(tokens) > 4 {
-			diff := len(tokens) - 4
-			tokens[0] = strings.Join(tokens[0:len(tokens) - 3], "-")
-			tokens[1] = tokens[1 + diff]
-			tokens[2] = tokens[2 + diff]
-			tokens[3] = tokens[3 + diff]
-		}
-
-		tokens1 := strings.Split(tokens[3], ".")
-		if len(tokens1) != 2 {
+	for _, dir := range dirs {
+		if !dir.IsDir() {
 			continue
 		}
 
-		if tokens1[1] != "aci" {
-			continue
-		}
-
-		var signed bool
-
-		_, err := os.Stat(path.Join(directory, fname+".asc"))
-		if err == nil {
-			signed = true
-		} else if os.IsNotExist(err) {
-			signed = false
-		} else {
+		aciDir := path.Join(rootPath, dir.Name())
+		files, err := ioutil.ReadDir(aciDir)
+		if err != nil {
 			return nil, err
 		}
 
-		details := acidetails{
-			Version: tokens[1],
-			OS:      tokens[2],
-			Arch:    tokens1[0],
-			Signed:  signed,
-			LastMod: file.ModTime().Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+		aci := aci{Name: dir.Name()}
+
+		for _, file := range files {
+			fileParts := imageFilePattern.FindStringSubmatch(file.Name())
+			if len(fileParts) != 5 {
+				continue
+			}
+
+			var signed bool
+
+			_, err := os.Stat(path.Join(aciDir, file.Name()+".asc"))
+			if err == nil {
+				signed = true
+			} else if os.IsNotExist(err) {
+				signed = false
+			} else {
+				return nil, err
+			}
+
+			details := acidetails{
+				Version: fileParts[2],
+				OS:      fileParts[3],
+				Arch:    fileParts[4],
+				Signed:  signed,
+				LastMod: file.ModTime().Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+			}
+			aci.Details = append(aci.Details, details)
 		}
 
-		// If the last ACI added to the list has the same name
-		if len(acis) > 0 && acis[len(acis)-1].Name == tokens[0] {
-			acis[len(acis)-1].Details = append(acis[len(acis)-1].Details,
-				details)
-		} else {
-			acis = append(acis, aci{
-				Name:    tokens[0],
-				Details: []acidetails{details},
-			})
-		}
+		acis = append(acis, aci)
 	}
 
 	return acis, nil
