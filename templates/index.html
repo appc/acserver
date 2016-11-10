@@ -15,7 +15,7 @@
 <html lang="en">
     <head>
         <meta charset="utf-8"/>
-        <meta name="ac-discovery" content="{{.ServerName}} {{if .HTTPS}}https{{else}}http{{end}}://{name}-{version}-{os}-{arch}.{ext}"/>
+        <meta name="ac-discovery" content="{{.ServerName}} {{if .HTTPS}}https{{else}}http{{end}}://{{.ServerName}}/find?name={name}&version={version}&os={os}&arch={arch}&ext={ext}"/>
         <meta name="ac-discovery-pubkeys" content="{{.ServerName}} {{if .HTTPS}}https{{else}}http{{end}}://{{.ServerName}}/pubkeys.gpg">
         <meta name="ac-push-discovery" content="{{.ServerName}} {{if .HTTPS}}https{{else}}http{{end}}://{name}-{version}-{os}-{arch}.{ext}/startupload"/>
     </head>
