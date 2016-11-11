@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -25,12 +26,10 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
-
-	"bytes"
-	"regexp"
 
 	"github.com/blablacar/acserver/dist"
 	"github.com/gorilla/handlers"
@@ -166,7 +165,7 @@ func main() {
 func find(w http.ResponseWriter, req *http.Request) {
 	var url bytes.Buffer
 
-	os := req.URL.Query().Get("os")
+	aos := req.URL.Query().Get("os")
 	arch := req.URL.Query().Get("arch")
 	ext := req.URL.Query().Get("ext")
 	version := req.URL.Query().Get("version")
@@ -174,6 +173,33 @@ func find(w http.ResponseWriter, req *http.Request) {
 	if len(hostAndName) != 3 {
 		w.WriteHeader(http.StatusNotFound)
 		return
+	}
+
+	if version == "latest" {
+		rootPath := path.Join(directory, hostAndName[1])
+		info, err := os.Stat(path.Join(rootPath, hostAndName[2]))
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		aci, err := listAci(rootPath, info)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(os.Stderr, "%v", err)
+			return
+		} else if aci == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		for _, detail := range aci.Details {
+			if detail.OS != aos || detail.Arch != arch {
+				continue
+			}
+			if version == "latest" || Version(detail.Version).GreaterThan(Version(version)) {
+				version = detail.Version
+			}
+		}
 	}
 
 	url.WriteString("http")
@@ -191,7 +217,7 @@ func find(w http.ResponseWriter, req *http.Request) {
 	url.WriteRune('-')
 	url.WriteString(version)
 	url.WriteRune('-')
-	url.WriteString(os)
+	url.WriteString(aos)
 	url.WriteRune('-')
 	url.WriteString(arch)
 	url.WriteRune('.')
@@ -656,47 +682,57 @@ func listACIs(req *http.Request) ([]aci, error) {
 
 	var acis []aci
 	for _, dir := range dirs {
-		if !dir.IsDir() {
-			continue
-		}
-
-		aciDir := path.Join(rootPath, dir.Name())
-		files, err := ioutil.ReadDir(aciDir)
+		aci, err := listAci(rootPath, dir)
 		if err != nil {
 			return nil, err
 		}
-
-		aci := aci{Name: dir.Name()}
-
-		for _, file := range files {
-			fileParts := imageFilePattern.FindStringSubmatch(file.Name())
-			if len(fileParts) != 5 {
-				continue
-			}
-
-			var signed bool
-
-			_, err := os.Stat(path.Join(aciDir, file.Name()+".asc"))
-			if err == nil {
-				signed = true
-			} else if os.IsNotExist(err) {
-				signed = false
-			} else {
-				return nil, err
-			}
-
-			details := acidetails{
-				Version: fileParts[2],
-				OS:      fileParts[3],
-				Arch:    fileParts[4],
-				Signed:  signed,
-				LastMod: file.ModTime().Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-			}
-			aci.Details = append(aci.Details, details)
+		if aci != nil {
+			acis = append(acis, *aci)
 		}
-
-		acis = append(acis, aci)
 	}
 
 	return acis, nil
+}
+
+func listAci(rootPath string, dir os.FileInfo) (*aci, error) {
+	if !dir.IsDir() {
+		return nil, nil
+	}
+
+	aciDir := path.Join(rootPath, dir.Name())
+
+	files, err := ioutil.ReadDir(aciDir)
+	if err != nil {
+		return nil, err
+	}
+
+	aci := &aci{Name: dir.Name()}
+
+	for _, file := range files {
+		fileParts := imageFilePattern.FindStringSubmatch(file.Name())
+		if len(fileParts) != 5 {
+			continue
+		}
+
+		var signed bool
+
+		_, err := os.Stat(path.Join(aciDir, file.Name()+".asc"))
+		if err == nil {
+			signed = true
+		} else if os.IsNotExist(err) {
+			signed = false
+		} else {
+			return nil, err
+		}
+
+		details := acidetails{
+			Version: fileParts[2],
+			OS:      fileParts[3],
+			Arch:    fileParts[4],
+			Signed:  signed,
+			LastMod: file.ModTime().Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+		}
+		aci.Details = append(aci.Details, details)
+	}
+	return aci, nil
 }
