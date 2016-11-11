@@ -32,6 +32,7 @@ import (
 	"bytes"
 	"regexp"
 
+	"github.com/blablacar/acserver/dist"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
@@ -73,10 +74,9 @@ type upload struct {
 }
 
 var (
-	directory   string
-	templatedir string
-	username    string
-	password    string
+	directory string
+	username  string
+	password  string
 
 	uploadcounter int
 	newuploadLock sync.Mutex
@@ -97,7 +97,7 @@ var (
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 	fmt.Fprintf(os.Stderr,
-		"acserver ACI_DIRECTORY TEMPLATE_DIRECTORY USERNAME PASSWORD\n")
+		"acserver ACI_DIRECTORY USERNAME PASSWORD\n")
 	fmt.Fprintf(os.Stderr, "Flags:\n")
 	flag.PrintDefaults()
 }
@@ -107,7 +107,7 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	if len(args) != 4 {
+	if len(args) != 3 {
 		usage()
 		return
 	}
@@ -128,9 +128,8 @@ func main() {
 	}
 
 	directory = args[0]
-	templatedir = args[1]
-	username = args[2]
-	password = args[3]
+	username = args[1]
+	password = args[2]
 
 	os.RemoveAll(path.Join(directory, "tmp"))
 	err := os.MkdirAll(path.Join(directory, "tmp"), 0755)
@@ -225,7 +224,11 @@ func renderListOfACIs(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	t, err := template.ParseFiles(path.Join(templatedir, "index.html"))
+	content, err := dist.Asset("templates/index.html")
+	if err != nil {
+		fmt.Fprintf(w, fmt.Sprintf("%v", err))
+	}
+	t, err := template.New("index").Parse(string(content))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, fmt.Sprintf("%v", err))
