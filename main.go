@@ -31,7 +31,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blablacar/acserver/dist"
+	"github.com/appc/acserver/dist"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
