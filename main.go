@@ -677,7 +677,8 @@ func listACIs(req *http.Request) ([]aci, error) {
 	rootPath := path.Join(directory, hostname(req))
 	dirs, err := ioutil.ReadDir(rootPath)
 	if err != nil {
-		return nil, err
+		fmt.Fprintf(os.Stderr, "Aci directory not found : %v\n", err)
+		return []aci{}, nil
 	}
 
 	var acis []aci
