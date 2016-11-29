@@ -31,7 +31,11 @@ import (
 	"sync"
 	"time"
 
+	"strings"
+
 	"github.com/appc/acserver/dist"
+	appcaci "github.com/appc/spec/aci"
+	"github.com/appc/spec/schema"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
@@ -89,8 +93,8 @@ var (
 	serverName = flag.String("domain", "", "domain provided by discovery")
 	unsigned   = flag.Bool("unsigned", false, "Ignore aci signature")
 
-	imageFilePattern   = regexp.MustCompile(`^([a-z0-9_-]+)-([a-z0-9_\-\.]+)-([a-z0-9_]+)-([a-z0-9_]+).aci$`)
-	hostAndNamePattern = regexp.MustCompile(`^([a-z0-9_\-.]+(?:\/[a-z0-9_\-.]+)*)\/([a-z0-9_-]+)$`)
+	versionOsArchPattern = regexp.MustCompile(`^-([a-z0-9_\-\.]+)-([a-z0-9_]+)-([a-z0-9_]+).aci$`)
+	hostAndNamePattern   = regexp.MustCompile(`^([a-z0-9_\-.]+(?:\/[a-z0-9_\-.]+)*)\/([a-z0-9_-]+)$`)
 )
 
 func usage() {
@@ -579,9 +583,48 @@ func abortUpload(num int) error {
 	return nil
 }
 
+func extractManifest(aciPath string) (*schema.ImageManifest, error) {
+	aciFile, err := os.Open(aciPath)
+	if err != nil {
+		return nil, err
+	}
+	defer aciFile.Close()
+
+	manifest, err := appcaci.ManifestFromImage(aciFile)
+	if err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+func computeFinalPathAndFile(num int) (string, string, error) {
+	manifest, err := extractManifest(path.Join(directory, "tmp", strconv.Itoa(num)))
+	if err != nil {
+		return "", "", err
+	}
+
+	res := hostAndNamePattern.FindStringSubmatch(string(manifest.Name))
+	version, ok := manifest.GetLabel("version")
+	if !ok {
+		return "", "", fmt.Errorf("version not found in aci manifest")
+	}
+	os, ok := manifest.GetLabel("os")
+	if !ok {
+		return "", "", fmt.Errorf("os not found in aci manifest")
+	}
+	arch, ok := manifest.GetLabel("arch")
+	if !ok {
+		return "", "", fmt.Errorf("arch not found in aci manifest")
+	}
+
+	targetPath := path.Join(directory, res[1], res[2])
+	filename := res[2] + "-" + version + "-" + os + "-" + arch + ".aci"
+	return targetPath, filename, nil
+}
+
 func finishUpload(num int, req *http.Request) error {
 	newuploadLock.Lock()
-	up, ok := uploads[num]
+	_, ok := uploads[num]
 	if ok {
 		delete(uploads, num)
 	}
@@ -590,20 +633,22 @@ func finishUpload(num int, req *http.Request) error {
 		return fmt.Errorf("no such upload: %d", num)
 	}
 
-	res := imageFilePattern.FindStringSubmatch(up.Image)
-	targetPath := path.Join(directory, hostname(req), res[1])
-	if err := os.MkdirAll(targetPath, 0755); err != nil {
+	finalPath, filename, err := computeFinalPathAndFile(num)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(finalPath, 0755); err != nil {
 		return err
 	}
 
-	err := os.Rename(path.Join(directory, "tmp", strconv.Itoa(num)), path.Join(targetPath, up.Image))
+	err = os.Rename(path.Join(directory, "tmp", strconv.Itoa(num)), path.Join(finalPath, filename))
 	if err != nil {
 		return err
 	}
 
 	tmpsig := path.Join(directory, "tmp", strconv.Itoa(num)+".asc")
 	if _, err := os.Stat(tmpsig); err == nil {
-		err = os.Rename(tmpsig, path.Join(directory, up.Image+".asc"))
+		err = os.Rename(tmpsig, path.Join(finalPath, filename+".asc"))
 		if err != nil {
 			return err
 		}
@@ -710,8 +755,9 @@ func listAci(rootPath string, dir os.FileInfo) (*aci, error) {
 	aci := &aci{Name: dir.Name()}
 
 	for _, file := range files {
-		fileParts := imageFilePattern.FindStringSubmatch(file.Name())
-		if len(fileParts) != 5 {
+		versionOsArch := strings.TrimPrefix(file.Name(), path.Base(aciDir))
+		fileParts := versionOsArchPattern.FindStringSubmatch(versionOsArch)
+		if len(fileParts) != 4 {
 			continue
 		}
 
@@ -727,9 +773,9 @@ func listAci(rootPath string, dir os.FileInfo) (*aci, error) {
 		}
 
 		details := acidetails{
-			Version: fileParts[2],
-			OS:      fileParts[3],
-			Arch:    fileParts[4],
+			Version: fileParts[1],
+			OS:      fileParts[2],
+			Arch:    fileParts[3],
 			Signed:  signed,
 			LastMod: file.ModTime().Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
 		}
