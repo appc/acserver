@@ -33,8 +33,9 @@ var (
 )
 
 type ACStorage struct {
-	RootPath string
-	Unsigned *bool
+	RootPath      string
+	Unsigned      *bool
+	AllowOverride *bool
 }
 
 func (s *ACStorage) init() error {
@@ -45,6 +46,10 @@ func (s *ACStorage) init() error {
 	if s.Unsigned == nil {
 		unsigned := true
 		s.Unsigned = &unsigned
+	}
+	if s.AllowOverride == nil {
+		override := true
+		s.AllowOverride = &override
 	}
 	return nil
 }
