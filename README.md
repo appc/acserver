@@ -19,6 +19,7 @@ api:
 storage:
   rootPath:             # where to store acis
   unsigned: true        # support unsigned acis
+  allowOverride: true   # allow overriding aci that already exists in store
 ```
 
 # public key

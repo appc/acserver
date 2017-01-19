@@ -326,7 +326,7 @@ func (a *ACApi) receiveUpload(genDst func(int) string, marksuccess func(int) err
 			return
 		}
 
-		_, err = os.Stat(up.Image)
+		_, err = os.Stat(up.Image) //TODO this do not work
 		if err == nil {
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte("item already uploaded"))
@@ -421,7 +421,7 @@ func (a *ACApi) completeUpload(w http.ResponseWriter, req *http.Request) {
 
 	err = a.finishUpload(num, req)
 	if err != nil {
-		a.reportFailure(num, w, "Internal Server Error", msg.Reason)
+		a.reportFailure(num, w, "Internal Server Error", err.Error())
 		return
 	}
 
@@ -517,6 +517,12 @@ func (a *ACApi) finishUpload(num int, req *http.Request) error {
 	}
 	if err := os.MkdirAll(finalPath, 0755); err != nil {
 		return err
+	}
+
+	if !*a.storage.AllowOverride {
+		if _, err = os.Stat(path.Join(finalPath, filename)); err == nil {
+			return fmt.Errorf("Aci already exists and override is forbidden")
+		}
 	}
 
 	err = os.Rename(path.Join(a.storage.RootPath, "tmp", strconv.Itoa(num)), path.Join(finalPath, filename))
