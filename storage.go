@@ -33,9 +33,9 @@ var (
 )
 
 type ACStorage struct {
-	RootPath      string
-	Unsigned      *bool
-	AllowOverride *bool
+	RootPath      string `yaml:"rootPath"`
+	Unsigned      *bool  `yaml:"unsigned"`
+	AllowOverride *bool  `yaml:"allowOverride"`
 }
 
 func (s *ACStorage) init() error {

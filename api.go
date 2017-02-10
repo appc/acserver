@@ -35,11 +35,11 @@ import (
 )
 
 type ACApi struct {
-	ServerName string
-	Port       int
-	Https      bool
-	Username   string
-	Password   string
+	ServerName string `yaml:"serverName"`
+	Port       int    `yaml:"port"`
+	Https      bool   `yaml:"https"`
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
 
 	storage       *ACStorage
 	uploadcounter int
