@@ -28,8 +28,8 @@ var BuildVersion string
 var BuildCommit string
 
 type ACServer struct {
-	Storage ACStorage
-	Api     ACApi
+	Storage ACStorage `yaml:"storage"`
+	Api     ACApi     `yaml:"api"`
 }
 
 func (acs *ACServer) init() error {
