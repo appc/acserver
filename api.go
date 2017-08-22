@@ -16,6 +16,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +27,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -78,14 +81,49 @@ func (a ACApi) Start() {
 	r.Handle("/aci/{num}", a.authHandler(a.receiveUpload(a.storage.tmpACIPath, a.gotACI)))
 	r.Handle("/complete/{num}", a.authHandler(a.completeUpload))
 	r.HandleFunc("/find", a.find)
-
-	r.NotFoundHandler = http.FileServer(http.Dir(a.storage.RootPath))
+	r.NotFoundHandler = a.fileHandler()
 
 	h := handlers.LoggingHandler(os.Stderr, r)
 
 	addr := ":" + strconv.Itoa(a.Port)
 	log.Println("Listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, h))
+}
+
+func sha1file(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha1.New()
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func (a ACApi) fileHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/") {
+			r.URL.Path = "/" + r.URL.Path
+		}
+
+		file := a.storage.RootPath + path.Clean(r.URL.Path)
+		if _, err := os.Stat(file); err == nil {
+			hash, err := sha1file(file)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(os.Stderr, "%v", err)
+			}
+
+			w.Header().Set("Etag", "\""+hash+"\"")
+		}
+		http.ServeFile(w, r, file)
+	})
 }
 
 func (a ACApi) find(w http.ResponseWriter, req *http.Request) {
